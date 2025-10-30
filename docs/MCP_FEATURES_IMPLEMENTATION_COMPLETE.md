@@ -228,12 +228,25 @@ session_id 삭제
 
 ### Output Format 선택 로직
 
+**업데이트 (2025-10-30)**: `--output-format json`이 **항상 기본값**으로 사용됩니다.
+
 ```python
+# 항상 json 형식 사용
+output_format = "json"
+
+# enable_session_tracking은 session_id 저장 여부만 제어
 if enable_session_tracking:
-    output_format = "json"      # session_id 필요
+    # session_id를 self.current_session_id에 저장
+    return result  # dict (with session_id)
 else:
-    output_format = "stream-json"  # 기본 (호환성)
+    # session_id는 무시
+    return result.get("content", "")  # str
 ```
+
+**장점**:
+- 풍부한 메타데이터 항상 제공 (cost, usage, num_turns)
+- 일관된 파싱 로직
+- 더 나은 디버깅 정보
 
 ---
 

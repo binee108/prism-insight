@@ -137,11 +137,8 @@ class ClaudeCodeCLIProvider(BaseLLMProvider):
                 filtered_args.append(arg)
             cmd += filtered_args
 
-        # Add output format (we control this)
-        if enable_session_tracking:
-            cmd += ["--output-format", "json"]
-        else:
-            cmd += ["--output-format", "stream-json", "--print"]
+        # Always use json format (default)
+        cmd += ["--output-format", "json"]
 
         return cmd
 
@@ -162,7 +159,7 @@ class ClaudeCodeCLIProvider(BaseLLMProvider):
             parts.append(f"{role}:\n{content}\n")
         return "\n".join(parts)
 
-    def _parse_output(self, raw_output: str, output_format: str = "stream-json") -> Dict[str, Any]:
+    def _parse_output(self, raw_output: str, output_format: str = "json") -> Dict[str, Any]:
         """
         Parse CLI output (JSON or plain text).
 
@@ -263,7 +260,7 @@ class ClaudeCodeCLIProvider(BaseLLMProvider):
 
         return result
 
-    async def _run_cli(self, cmd: List[str], prompt: str, output_format: str = "stream-json") -> Dict[str, Any]:
+    async def _run_cli(self, cmd: List[str], prompt: str, output_format: str = "json") -> Dict[str, Any]:
         """
         Execute the CLI command asynchronously.
 
@@ -375,8 +372,8 @@ class ClaudeCodeCLIProvider(BaseLLMProvider):
         # Render messages to prompt
         prompt = self._render_messages(messages)
 
-        # Determine output format
-        output_format = "json" if enable_session_tracking else "stream-json"
+        # Always use json format
+        output_format = "json"
 
         # Execute CLI
         result = await self._run_cli(cmd, prompt, output_format=output_format)
@@ -424,8 +421,8 @@ class ClaudeCodeCLIProvider(BaseLLMProvider):
             enable_session_tracking=enable_session_tracking
         )
 
-        # Determine output format
-        output_format = "json" if enable_session_tracking else "stream-json"
+        # Always use json format
+        output_format = "json"
 
         # Execute CLI
         result = await self._run_cli(cmd, prompt, output_format=output_format)
@@ -434,8 +431,8 @@ class ClaudeCodeCLIProvider(BaseLLMProvider):
         if "error" in result and result["error"]:
             raise Exception(result["error"])
 
-        # If session tracking is enabled, return full dict
-        # Otherwise return just the content string
+        # If session tracking is enabled, return full dict (with session_id)
+        # Otherwise return just the content string (backward compatibility)
         if enable_session_tracking:
             return result
         else:
