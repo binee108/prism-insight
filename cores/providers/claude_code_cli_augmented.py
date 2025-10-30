@@ -87,10 +87,54 @@ class ClaudeCodeCLIAugmentedLLM:
         # Store agent's instruction for context (safe access)
         self.instruction = getattr(agent, "instruction", None) if agent else None
 
+        # Session management (Phase 4: use_history support)
+        self.current_session_id: Optional[str] = None
+        self.use_history: bool = False
+
         logger.info(
             f"Initialized ClaudeCodeCLIAugmentedLLM for agent: "
             f"{agent.name if agent else 'None'}"
         )
+
+    def _build_prompt_with_directives(
+        self,
+        base_prompt: str,
+        parallel_tool_calls: bool = False
+    ) -> str:
+        """
+        Add system directives to prompt based on request params.
+
+        Args:
+            base_prompt: Original prompt
+            parallel_tool_calls: Whether to enable parallel tool calls
+
+        Returns:
+            Modified prompt with directives
+        """
+        directives = []
+
+        # Phase 3: Add parallel processing directive
+        if parallel_tool_calls:
+            directives.append(
+                "SYSTEM DIRECTIVE: When using the Task tool, process independent "
+                "tasks in parallel when possible for better efficiency."
+            )
+
+        if directives:
+            directive_text = "\n".join(directives)
+            return f"{directive_text}\n\n{base_prompt}"
+
+        return base_prompt
+
+    def clear_history(self):
+        """
+        Clear conversation history and session.
+
+        Call this method to start a fresh conversation without history.
+        """
+        self.current_session_id = None
+        self.use_history = False
+        logger.info("Conversation history cleared")
 
     async def generate_str(
         self,
@@ -104,7 +148,7 @@ class ClaudeCodeCLIAugmentedLLM:
 
         Args:
             message: The user prompt/message
-            request_params: Request parameters (model, tokens, etc.)
+            request_params: Request parameters (model, tokens, max_iterations, etc.)
 
         Returns:
             str: The generated response text
@@ -112,15 +156,34 @@ class ClaudeCodeCLIAugmentedLLM:
         Raises:
             Exception: If generation fails
         """
-        # Extract model from request_params if provided
+        # Extract all parameters from request_params
         model = None
         max_tokens = None
         temperature = None
+        max_turns = None
+        parallel_tool_calls = False
+        use_history = False
 
         if request_params:
             model = getattr(request_params, "model", None)
             max_tokens = getattr(request_params, "maxTokens", None)
             temperature = getattr(request_params, "temperature", None)
+
+            # Phase 1: Map max_iterations to max_turns
+            max_iterations = getattr(request_params, "max_iterations", None)
+            if max_iterations is not None:
+                max_turns = max_iterations
+                logger.debug(f"Mapped max_iterations={max_iterations} to max_turns={max_turns}")
+
+            # Phase 3: Extract parallel_tool_calls
+            parallel_tool_calls = getattr(request_params, "parallel_tool_calls", False)
+
+            # Phase 4: Extract use_history
+            use_history = getattr(request_params, "use_history", False)
+
+        # Phase 4: Activate history if requested
+        if use_history:
+            self.use_history = True
 
         # Build the full prompt including agent instruction
         full_prompt = message
@@ -132,18 +195,52 @@ USER MESSAGE:
 {message}
 """
 
-        logger.debug(f"Generating response with model={model}, max_tokens={max_tokens}")
+        # Phase 3: Add parallel processing directive if requested
+        full_prompt = self._build_prompt_with_directives(
+            base_prompt=full_prompt,
+            parallel_tool_calls=parallel_tool_calls
+        )
+
+        # Phase 4: Determine if we should resume a session
+        resume_session = None
+        if self.use_history and self.current_session_id:
+            resume_session = self.current_session_id
+            logger.debug(f"Resuming session: {resume_session}")
+
+        logger.debug(
+            f"Generating response: model={model}, max_tokens={max_tokens}, "
+            f"max_turns={max_turns}, parallel={parallel_tool_calls}, "
+            f"use_history={use_history}"
+        )
 
         # Call the underlying provider
-        response = await self.provider.generate_str(
+        result = await self.provider.generate_str(
             prompt=full_prompt,
             model=model,
             max_tokens=max_tokens,
             temperature=temperature,
+            max_turns=max_turns,
+            resume_session=resume_session,
+            enable_session_tracking=self.use_history
         )
 
-        logger.info(f"Generated response: {len(response)} chars")
-        return response
+        # Phase 4: If using history, the provider returns a dict with session_id
+        # But generate_str should return str, so we need to handle this differently
+        # We'll modify provider.generate_str to return the dict and extract content here
+        if isinstance(result, dict):
+            # Update session if available
+            if "session_id" in result:
+                self.current_session_id = result["session_id"]
+                logger.debug(f"Session ID updated: {self.current_session_id}")
+
+            # Extract content
+            content = result.get("content", "")
+            logger.info(f"Generated response: {len(content)} chars")
+            return content
+        else:
+            # Backward compatibility if result is already a string
+            logger.info(f"Generated response: {len(result)} chars")
+            return result
 
     async def generate(
         self,
@@ -158,35 +255,39 @@ USER MESSAGE:
             request_params: Request parameters
 
         Returns:
-            Dict with 'content', 'usage', and optional 'error' keys
+            Dict with 'content', 'usage', and optional 'error', 'session_id' keys
 
         Raises:
             Exception: If generation fails
         """
-        # Extract parameters
+        # Extract all parameters from request_params
         model = None
         max_tokens = None
         temperature = None
+        max_turns = None
+        parallel_tool_calls = False
+        use_history = False
 
         if request_params:
             model = getattr(request_params, "model", None)
             max_tokens = getattr(request_params, "maxTokens", None)
             temperature = getattr(request_params, "temperature", None)
 
-            # Warn about unsupported parameters
-            unsupported_params = []
-            if getattr(request_params, "max_iterations", None):
-                unsupported_params.append("max_iterations")
-            if getattr(request_params, "parallel_tool_calls", None):
-                unsupported_params.append("parallel_tool_calls")
-            if getattr(request_params, "use_history", None):
-                unsupported_params.append("use_history")
+            # Phase 1: Map max_iterations to max_turns
+            max_iterations = getattr(request_params, "max_iterations", None)
+            if max_iterations is not None:
+                max_turns = max_iterations
+                logger.debug(f"Mapped max_iterations={max_iterations} to max_turns={max_turns}")
 
-            if unsupported_params:
-                logger.warning(
-                    f"Claude Code CLI does not support the following RequestParams: "
-                    f"{', '.join(unsupported_params)}. These will be ignored."
-                )
+            # Phase 3: Extract parallel_tool_calls
+            parallel_tool_calls = getattr(request_params, "parallel_tool_calls", False)
+
+            # Phase 4: Extract use_history
+            use_history = getattr(request_params, "use_history", False)
+
+        # Phase 4: Activate history if requested
+        if use_history:
+            self.use_history = True
 
         # Add system instruction as first message if available
         if self.instruction:
@@ -195,13 +296,45 @@ USER MESSAGE:
                 *messages
             ]
 
+        # Phase 3: Add parallel processing directive to first user message
+        if parallel_tool_calls and messages:
+            # Find first user message and add directive
+            for msg in messages:
+                if msg.get("role") == "user":
+                    original_content = msg.get("content", "")
+                    msg["content"] = self._build_prompt_with_directives(
+                        base_prompt=original_content,
+                        parallel_tool_calls=True
+                    )
+                    break
+
+        # Phase 4: Determine if we should resume a session
+        resume_session = None
+        if self.use_history and self.current_session_id:
+            resume_session = self.current_session_id
+            logger.debug(f"Resuming session: {resume_session}")
+
+        logger.debug(
+            f"Generating response: model={model}, max_tokens={max_tokens}, "
+            f"max_turns={max_turns}, parallel={parallel_tool_calls}, "
+            f"use_history={use_history}"
+        )
+
         # Call the underlying provider
         result = await self.provider.generate(
             messages=messages,
             model=model,
             max_tokens=max_tokens,
             temperature=temperature,
+            max_turns=max_turns,
+            resume_session=resume_session,
+            enable_session_tracking=self.use_history
         )
+
+        # Phase 4: Update session if available
+        if "session_id" in result:
+            self.current_session_id = result["session_id"]
+            logger.debug(f"Session ID updated: {self.current_session_id}")
 
         # Raise exception if error occurred (consistent with generate_str)
         if "error" in result and result["error"]:

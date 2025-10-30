@@ -73,7 +73,10 @@ class ClaudeCodeCLIProvider(BaseLLMProvider):
         self,
         model: Optional[str] = None,
         max_tokens: Optional[int] = None,
-        temperature: Optional[float] = None
+        temperature: Optional[float] = None,
+        max_turns: Optional[int] = None,
+        resume_session: Optional[str] = None,
+        enable_session_tracking: bool = False
     ) -> List[str]:
         """
         Build the CLI command array.
@@ -82,11 +85,18 @@ class ClaudeCodeCLIProvider(BaseLLMProvider):
             model: Override default model
             max_tokens: Maximum tokens to generate
             temperature: Sampling temperature
+            max_turns: Maximum agent turns (maps to --max-turns)
+            resume_session: Session ID to resume (maps to --resume)
+            enable_session_tracking: Use json output format for session tracking
 
         Returns:
             List of command arguments
         """
         cmd = [self.cli_path]
+
+        # Resume session if provided
+        if resume_session:
+            cmd += ["--resume", resume_session]
 
         # Add model if specified
         effective_model = model or self.model
@@ -101,13 +111,37 @@ class ClaudeCodeCLIProvider(BaseLLMProvider):
         if temperature is not None:
             cmd += ["--temperature", str(temperature)]
 
+        # Add max_turns if specified (for max_iterations support)
+        if max_turns is not None and max_turns > 0:
+            cmd += ["--max-turns", str(max_turns)]
+
         # Add project path if specified (this is the -p option)
         if self.project_path:
             cmd += ["-p", self.project_path]
 
-        # Add extra arguments
+        # Handle extra arguments and output format
         if self.extra_args:
-            cmd += shlex.split(self.extra_args)
+            # Filter out --output-format from extra_args to avoid conflicts
+            args = shlex.split(self.extra_args)
+            filtered_args = []
+            skip_next = False
+            for i, arg in enumerate(args):
+                if skip_next:
+                    skip_next = False
+                    continue
+                if arg == "--output-format":
+                    skip_next = True  # Skip the next argument too
+                    continue
+                if arg.startswith("--output-format="):
+                    continue
+                filtered_args.append(arg)
+            cmd += filtered_args
+
+        # Add output format (we control this)
+        if enable_session_tracking:
+            cmd += ["--output-format", "json"]
+        else:
+            cmd += ["--output-format", "stream-json", "--print"]
 
         return cmd
 
@@ -128,71 +162,121 @@ class ClaudeCodeCLIProvider(BaseLLMProvider):
             parts.append(f"{role}:\n{content}\n")
         return "\n".join(parts)
 
-    def _parse_output(self, raw_output: str) -> Dict[str, Any]:
+    def _parse_output(self, raw_output: str, output_format: str = "stream-json") -> Dict[str, Any]:
         """
         Parse CLI output (JSON or plain text).
 
         Args:
             raw_output: Raw stdout from CLI
+            output_format: Format of the output ("json" or "stream-json")
 
         Returns:
-            Dict with 'content' and 'usage' keys
+            Dict with 'content', 'usage', and optionally 'session_id', 'cost', 'num_turns'
         """
         content = None
         usage = {}
+        session_id = None
+        total_cost_usd = None
+        num_turns = None
 
         try:
-            # Try to parse as stream-json (last line should be JSON)
-            lines = [line for line in raw_output.splitlines() if line.strip()]
-            if not lines:
-                return {"content": "", "usage": {}}
+            if output_format == "json":
+                # Parse full JSON output from --output-format json
+                data = json.loads(raw_output)
 
-            last_line = lines[-1]
-            data = json.loads(last_line)
+                # Check for errors
+                if data.get("is_error"):
+                    return {
+                        "content": "",
+                        "error": data.get("result", "Unknown error"),
+                        "session_id": data.get("session_id")
+                    }
 
-            # Extract content (try different keys)
-            content = (
-                data.get("content") or
-                data.get("text") or
-                data.get("response")
-            )
+                # Extract content from "result" key
+                content = data.get("result", "")
 
-            # If no content found in expected keys, log warning and use raw output
-            if not content:
-                logger.warning(
-                    f"JSON parsed successfully but no content found. "
-                    f"Available keys: {list(data.keys())}. Using raw output."
+                # Extract session metadata
+                session_id = data.get("session_id")
+                total_cost_usd = data.get("total_cost_usd")
+                num_turns = data.get("num_turns")
+
+                # Extract usage information
+                usage_data = data.get("usage", {})
+                usage = {
+                    "input_tokens": usage_data.get("input_tokens", 0),
+                    "output_tokens": usage_data.get("output_tokens", 0),
+                    "cache_read_tokens": usage_data.get("cache_read_input_tokens", 0),
+                    "cache_creation_tokens": usage_data.get("cache_creation_input_tokens", 0),
+                }
+
+                logger.debug(
+                    f"Parsed JSON output: {len(content)} chars, "
+                    f"session_id={session_id}, cost=${total_cost_usd}, turns={num_turns}"
                 )
-                content = raw_output.strip()
 
-            # Extract usage if available
-            usage = data.get("usage") or {}
+            else:
+                # Parse stream-json (last line should be JSON)
+                lines = [line for line in raw_output.splitlines() if line.strip()]
+                if not lines:
+                    return {"content": "", "usage": {}}
 
-            logger.debug(f"Parsed JSON output: {len(str(content))} chars, usage={usage}")
+                last_line = lines[-1]
+                data = json.loads(last_line)
+
+                # Extract content (try different keys)
+                content = (
+                    data.get("content") or
+                    data.get("text") or
+                    data.get("response")
+                )
+
+                # If no content found in expected keys, log warning and use raw output
+                if not content:
+                    logger.warning(
+                        f"JSON parsed successfully but no content found. "
+                        f"Available keys: {list(data.keys())}. Using raw output."
+                    )
+                    content = raw_output.strip()
+
+                # Extract usage if available
+                usage = data.get("usage") or {}
+
+                logger.debug(f"Parsed stream-json output: {len(str(content))} chars, usage={usage}")
 
         except (json.JSONDecodeError, IndexError) as e:
             # Fallback to plain text
             content = raw_output.strip()
             logger.debug(f"Using plain text output: {len(content)} chars (JSON parse failed: {e})")
 
-        return {
+        result = {
             "content": content,
             "usage": usage,
         }
 
-    async def _run_cli(self, cmd: List[str], prompt: str) -> Dict[str, Any]:
+        # Add session metadata if available
+        if session_id:
+            result["session_id"] = session_id
+        if total_cost_usd is not None:
+            result["total_cost_usd"] = total_cost_usd
+        if num_turns is not None:
+            result["num_turns"] = num_turns
+
+        return result
+
+    async def _run_cli(self, cmd: List[str], prompt: str, output_format: str = "stream-json") -> Dict[str, Any]:
         """
         Execute the CLI command asynchronously.
 
         Args:
             cmd: Command array
             prompt: Prompt to send via stdin
+            output_format: Format of CLI output ("json" or "stream-json")
 
         Returns:
             Dict with 'content', 'usage', and optional 'error' keys
         """
         logger.info(f"Running CLI command: {' '.join(cmd)}")
-        logger.debug(f"Prompt length: {len(prompt)} chars")
+        logger.debug(f"Prompt length: {len(prompt)} chars, output_format: {output_format}")
 
         try:
             # Run subprocess with asyncio
@@ -233,7 +317,7 @@ class ClaudeCodeCLIProvider(BaseLLMProvider):
 
             # Parse output
             raw_output = stdout.decode("utf-8", errors="ignore")
-            result = self._parse_output(raw_output)
+            result = self._parse_output(raw_output, output_format=output_format)
 
             logger.info(f"CLI execution successful: {len(result.get('content', ''))} chars")
             return result
@@ -257,6 +341,9 @@ class ClaudeCodeCLIProvider(BaseLLMProvider):
         model: Optional[str] = None,
         max_tokens: Optional[int] = None,
         temperature: Optional[float] = None,
+        max_turns: Optional[int] = None,
+        resume_session: Optional[str] = None,
+        enable_session_tracking: bool = False,
         **kwargs
     ) -> Dict[str, Any]:
         """
@@ -267,23 +354,32 @@ class ClaudeCodeCLIProvider(BaseLLMProvider):
             model: Model name override
             max_tokens: Maximum tokens to generate
             temperature: Sampling temperature (0.0 - 1.0)
+            max_turns: Maximum agent turns for tool calling
+            resume_session: Session ID to resume conversation
+            enable_session_tracking: Enable session tracking (returns session_id)
             **kwargs: Additional parameters (ignored)
 
         Returns:
-            Dict with 'content', 'usage', and optional 'error' keys
+            Dict with 'content', 'usage', and optional 'error', 'session_id', 'cost' keys
         """
         # Build command with parameters
         cmd = self._build_command(
             model=model,
             max_tokens=max_tokens,
-            temperature=temperature
+            temperature=temperature,
+            max_turns=max_turns,
+            resume_session=resume_session,
+            enable_session_tracking=enable_session_tracking
         )
 
         # Render messages to prompt
         prompt = self._render_messages(messages)
 
+        # Determine output format
+        output_format = "json" if enable_session_tracking else "stream-json"
+
         # Execute CLI
-        result = await self._run_cli(cmd, prompt)
+        result = await self._run_cli(cmd, prompt, output_format=output_format)
 
         return result
 
@@ -293,8 +389,11 @@ class ClaudeCodeCLIProvider(BaseLLMProvider):
         model: Optional[str] = None,
         max_tokens: Optional[int] = None,
         temperature: Optional[float] = None,
+        max_turns: Optional[int] = None,
+        resume_session: Optional[str] = None,
+        enable_session_tracking: bool = False,
         **kwargs
-    ) -> str:
+    ):
         """
         Simplified interface that takes a single prompt string.
 
@@ -303,10 +402,14 @@ class ClaudeCodeCLIProvider(BaseLLMProvider):
             model: Model name override
             max_tokens: Maximum tokens to generate
             temperature: Sampling temperature (0.0 - 1.0)
+            max_turns: Maximum agent turns for tool calling
+            resume_session: Session ID to resume conversation
+            enable_session_tracking: Enable session tracking (returns dict with session_id)
             **kwargs: Additional parameters (ignored)
 
         Returns:
-            str: The generated response text
+            str if enable_session_tracking is False
+            Dict[str, Any] if enable_session_tracking is True (includes session_id)
 
         Raises:
             Exception: If generation fails
@@ -315,14 +418,25 @@ class ClaudeCodeCLIProvider(BaseLLMProvider):
         cmd = self._build_command(
             model=model,
             max_tokens=max_tokens,
-            temperature=temperature
+            temperature=temperature,
+            max_turns=max_turns,
+            resume_session=resume_session,
+            enable_session_tracking=enable_session_tracking
         )
 
+        # Determine output format
+        output_format = "json" if enable_session_tracking else "stream-json"
+
         # Execute CLI
-        result = await self._run_cli(cmd, prompt)
+        result = await self._run_cli(cmd, prompt, output_format=output_format)
 
         # Check for errors
         if "error" in result and result["error"]:
             raise Exception(result["error"])
 
-        return result.get("content", "")
+        # If session tracking is enabled, return full dict
+        # Otherwise return just the content string
+        if enable_session_tracking:
+            return result
+        else:
+            return result.get("content", "")
