@@ -41,7 +41,7 @@ logger = logging.getLogger(__name__)
 from mcp_agent.agents.agent import Agent
 from mcp_agent.app import MCPApp
 from mcp_agent.workflows.llm.augmented_llm import RequestParams
-from mcp_agent.workflows.llm.augmented_llm_openai import OpenAIAugmentedLLM
+from cores.llm_factory import get_llm_provider_class
 
 # MCPApp 인스턴스 생성
 app = MCPApp(name="stock_tracking")
@@ -634,7 +634,7 @@ class StockTrackingAgent:
             """
 
             # LLM 호출하여 매매 시나리오 생성
-            llm = await self.trading_agent.attach_llm(OpenAIAugmentedLLM)
+            llm = await self.trading_agent.attach_llm(get_llm_provider_class())
 
             response = await llm.generate_str(
                 message=f"""

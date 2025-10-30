@@ -16,7 +16,7 @@ import markdown
 from mcp_agent.agents.agent import Agent
 from mcp_agent.app import MCPApp
 from mcp_agent.workflows.llm.augmented_llm import RequestParams
-from mcp_agent.workflows.llm.augmented_llm_anthropic import AnthropicAugmentedLLM
+from cores.llm_factory import get_llm_provider_class
 
 # 로거 설정
 logger = logging.getLogger(__name__)
@@ -409,7 +409,7 @@ async def generate_follow_up_response(ticker, ticker_name, conversation_context,
         )
 
         # LLM 연결
-        llm = await agent.attach_llm(AnthropicAugmentedLLM)
+        llm = await agent.attach_llm(get_llm_provider_class())
 
         # 응답 생성
         response = await llm.generate_str(
@@ -586,7 +586,7 @@ async def generate_evaluation_response(ticker, ticker_name, avg_price, period, t
         )
 
         # LLM 연결
-        llm = await agent.attach_llm(AnthropicAugmentedLLM)
+        llm = await agent.attach_llm(get_llm_provider_class())
 
         # 보고서 내용 확인
         report_content = ""

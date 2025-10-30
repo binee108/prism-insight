@@ -9,11 +9,11 @@ from pathlib import Path
 from mcp_agent.agents.agent import Agent
 from mcp_agent.app import MCPApp
 from mcp_agent.workflows.llm.augmented_llm import RequestParams
-from mcp_agent.workflows.llm.augmented_llm_openai import OpenAIAugmentedLLM
 from mcp_agent.workflows.evaluator_optimizer.evaluator_optimizer import (
     EvaluatorOptimizerLLM,
     QualityRating,
 )
+from cores.llm_factory import get_llm_provider_class
 
 # 로깅 설정
 logging.basicConfig(
@@ -241,7 +241,7 @@ class TelegramSummaryGenerator:
         evaluator_optimizer = EvaluatorOptimizerLLM(
             optimizer=optimizer,
             evaluator=evaluator,
-            llm_factory=OpenAIAugmentedLLM,
+            llm_factory=get_llm_provider_class(),
             min_rating=QualityRating.EXCELLENT
         )
 

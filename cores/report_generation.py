@@ -1,7 +1,7 @@
 from tenacity import retry, stop_after_attempt, wait_exponential, retry_if_exception_type
 from mcp_agent.agents.agent import Agent
 from mcp_agent.workflows.llm.augmented_llm import RequestParams
-from mcp_agent.workflows.llm.augmented_llm_openai import OpenAIAugmentedLLM
+from cores.llm_factory import get_llm_provider_class
 
 
 @retry(
@@ -11,7 +11,7 @@ from mcp_agent.workflows.llm.augmented_llm_openai import OpenAIAugmentedLLM
 )
 async def generate_report(agent, section, company_name, company_code, reference_date, logger):
     """에이전트를 사용하여 보고서 생성 - 재시도 로직 포함"""
-    llm = await agent.attach_llm(OpenAIAugmentedLLM)
+    llm = await agent.attach_llm(get_llm_provider_class())
     report = await llm.generate_str(
         message=f"""{company_name}({company_code})의 {section} 분석 보고서를 작성해주세요.
                                 
@@ -42,7 +42,7 @@ async def generate_report(agent, section, company_name, company_code, reference_
 
 async def generate_market_report(agent, section, reference_date, logger):
     """에이전트를 사용하여 시장 분석 보고서 생성"""
-    llm = await agent.attach_llm(OpenAIAugmentedLLM)
+    llm = await agent.attach_llm(get_llm_provider_class())
     report = await llm.generate_str(
         message=f"""시장과 거시환경 분석 보고서를 작성해주세요.
                                 
@@ -75,10 +75,6 @@ async def generate_market_report(agent, section, reference_date, logger):
 async def generate_summary(section_reports, company_name, company_code, reference_date, logger):
     """섹션 보고서들을 바탕으로 요약 생성"""
     try:
-        from mcp_agent.agents.agent import Agent
-        from mcp_agent.workflows.llm.augmented_llm import RequestParams
-        from mcp_agent.workflows.llm.augmented_llm_openai import OpenAIAugmentedLLM
-        
         # 모든 섹션을 포함한 종합 보고서 생성
         all_reports = ""
         for section, report in section_reports.items():
@@ -97,7 +93,7 @@ async def generate_summary(section_reports, company_name, company_code, referenc
                         """
         )
 
-        llm = await summary_agent.attach_llm(OpenAIAugmentedLLM)
+        llm = await summary_agent.attach_llm(get_llm_provider_class())
         executive_summary = await llm.generate_str(
             message=f"""아래 {company_name}({company_code})의 종합 분석 보고서를 바탕으로 핵심 투자 포인트 요약을 작성해주세요.
                     요약에는 기업의 현재 상황, 투자 매력 포인트, 주요 리스크 요소, 적합한 투자자 유형 등이 포함되어야 합니다.
@@ -134,10 +130,6 @@ async def generate_summary(section_reports, company_name, company_code, referenc
 
 async def generate_investment_strategy(section_reports, combined_reports, company_name, company_code, reference_date, logger):
     """투자 전략 보고서 생성"""
-    from mcp_agent.agents.agent import Agent
-    from mcp_agent.workflows.llm.augmented_llm import RequestParams
-    from mcp_agent.workflows.llm.augmented_llm_openai import OpenAIAugmentedLLM
-    
     try:
         logger.info(f"Processing investment_strategy for {company_name}...")
         investment_strategy_agent = Agent(
@@ -205,7 +197,7 @@ async def generate_investment_strategy(section_reports, combined_reports, compan
             """
         )
 
-        llm = await investment_strategy_agent.attach_llm(OpenAIAugmentedLLM)
+        llm = await investment_strategy_agent.attach_llm(get_llm_provider_class())
         investment_strategy = await llm.generate_str(
             message=f"""{company_name}({company_code})의 투자 전략 분석 보고서를 작성해주세요.
             
