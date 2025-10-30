@@ -230,6 +230,8 @@ PRISM-INSIGHT는 **12개의 전문화된 AI 에이전트들이 협업하는 다�
 - **핵심 분석**: OpenAI GPT-4.1 (종합 주식 분석 에이전트)
 - **매매 시뮬레이션**: OpenAI GPT-5 (투자 전략 시뮬레이션)
 - **텔레그램 대화**: Anthropic Claude Sonnet 4.5 (봇과의 상호작용)
+- **🆕 Claude Code CLI**: 로컬 실행 지원 - API 키 없이 Claude Code CLI를 LLM provider로 사용 가능
+  - 자세한 설정 방법은 [Claude Code CLI Integration Guide](docs/CLAUDE_CODE_CLI_INTEGRATION.md) 참조
 
 ## 💡 사용한 MCP Servers
 
