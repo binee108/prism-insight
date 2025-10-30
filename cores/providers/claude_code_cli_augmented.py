@@ -84,8 +84,8 @@ class ClaudeCodeCLIAugmentedLLM:
             timeout=timeout,
         )
 
-        # Store agent's instruction for context
-        self.instruction = agent.instruction if agent else None
+        # Store agent's instruction for context (safe access)
+        self.instruction = getattr(agent, "instruction", None) if agent else None
 
         logger.info(
             f"Initialized ClaudeCodeCLIAugmentedLLM for agent: "
@@ -159,6 +159,9 @@ USER MESSAGE:
 
         Returns:
             Dict with 'content', 'usage', and optional 'error' keys
+
+        Raises:
+            Exception: If generation fails
         """
         # Extract parameters
         model = None
@@ -169,6 +172,21 @@ USER MESSAGE:
             model = getattr(request_params, "model", None)
             max_tokens = getattr(request_params, "maxTokens", None)
             temperature = getattr(request_params, "temperature", None)
+
+            # Warn about unsupported parameters
+            unsupported_params = []
+            if getattr(request_params, "max_iterations", None):
+                unsupported_params.append("max_iterations")
+            if getattr(request_params, "parallel_tool_calls", None):
+                unsupported_params.append("parallel_tool_calls")
+            if getattr(request_params, "use_history", None):
+                unsupported_params.append("use_history")
+
+            if unsupported_params:
+                logger.warning(
+                    f"Claude Code CLI does not support the following RequestParams: "
+                    f"{', '.join(unsupported_params)}. These will be ignored."
+                )
 
         # Add system instruction as first message if available
         if self.instruction:
@@ -184,6 +202,10 @@ USER MESSAGE:
             max_tokens=max_tokens,
             temperature=temperature,
         )
+
+        # Raise exception if error occurred (consistent with generate_str)
+        if "error" in result and result["error"]:
+            raise Exception(result["error"])
 
         return result
 

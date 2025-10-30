@@ -8,12 +8,12 @@ providers without code changes.
 
 import os
 import logging
-from typing import Type, Optional
+from typing import Type, Optional, Any
 
 logger = logging.getLogger(__name__)
 
 
-def get_llm_provider_class(provider_name: Optional[str] = None) -> Type:
+def get_llm_provider_class(provider_name: Optional[str] = None) -> Type[Any]:
     """
     Get the LLM provider class based on name or environment variable.
 

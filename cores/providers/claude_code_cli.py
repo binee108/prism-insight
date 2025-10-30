@@ -69,12 +69,19 @@ class ClaudeCodeCLIProvider(BaseLLMProvider):
             f"timeout={self.timeout}s"
         )
 
-    def _build_command(self, model: Optional[str] = None) -> List[str]:
+    def _build_command(
+        self,
+        model: Optional[str] = None,
+        max_tokens: Optional[int] = None,
+        temperature: Optional[float] = None
+    ) -> List[str]:
         """
         Build the CLI command array.
 
         Args:
             model: Override default model
+            max_tokens: Maximum tokens to generate
+            temperature: Sampling temperature
 
         Returns:
             List of command arguments
@@ -85,6 +92,14 @@ class ClaudeCodeCLIProvider(BaseLLMProvider):
         effective_model = model or self.model
         if effective_model:
             cmd += ["--model", effective_model]
+
+        # Add max_tokens if specified
+        if max_tokens is not None:
+            cmd += ["--max-tokens", str(max_tokens)]
+
+        # Add temperature if specified
+        if temperature is not None:
+            cmd += ["--temperature", str(temperature)]
 
         # Add project path if specified (this is the -p option)
         if self.project_path:
@@ -139,9 +154,16 @@ class ClaudeCodeCLIProvider(BaseLLMProvider):
             content = (
                 data.get("content") or
                 data.get("text") or
-                data.get("response") or
-                raw_output
+                data.get("response")
             )
+
+            # If no content found in expected keys, log warning and use raw output
+            if not content:
+                logger.warning(
+                    f"JSON parsed successfully but no content found. "
+                    f"Available keys: {list(data.keys())}. Using raw output."
+                )
+                content = raw_output.strip()
 
             # Extract usage if available
             usage = data.get("usage") or {}
@@ -189,7 +211,11 @@ class ClaudeCodeCLIProvider(BaseLLMProvider):
                 )
             except asyncio.TimeoutError:
                 proc.kill()
-                await proc.wait()
+                try:
+                    # Wait for process to terminate, with a short timeout
+                    await asyncio.wait_for(proc.wait(), timeout=5.0)
+                except asyncio.TimeoutError:
+                    logger.error("Process did not terminate after kill signal")
                 logger.error(f"CLI execution timeout after {self.timeout}s")
                 return {
                     "content": "",
@@ -239,15 +265,19 @@ class ClaudeCodeCLIProvider(BaseLLMProvider):
         Args:
             messages: List of message dicts
             model: Model name override
-            max_tokens: Not used (CLI manages this)
-            temperature: Not used (CLI manages this)
+            max_tokens: Maximum tokens to generate
+            temperature: Sampling temperature (0.0 - 1.0)
             **kwargs: Additional parameters (ignored)
 
         Returns:
             Dict with 'content', 'usage', and optional 'error' keys
         """
-        # Build command
-        cmd = self._build_command(model=model)
+        # Build command with parameters
+        cmd = self._build_command(
+            model=model,
+            max_tokens=max_tokens,
+            temperature=temperature
+        )
 
         # Render messages to prompt
         prompt = self._render_messages(messages)
@@ -271,8 +301,8 @@ class ClaudeCodeCLIProvider(BaseLLMProvider):
         Args:
             prompt: Single prompt string
             model: Model name override
-            max_tokens: Not used (CLI manages this)
-            temperature: Not used (CLI manages this)
+            max_tokens: Maximum tokens to generate
+            temperature: Sampling temperature (0.0 - 1.0)
             **kwargs: Additional parameters (ignored)
 
         Returns:
@@ -281,8 +311,12 @@ class ClaudeCodeCLIProvider(BaseLLMProvider):
         Raises:
             Exception: If generation fails
         """
-        # Build command
-        cmd = self._build_command(model=model)
+        # Build command with parameters
+        cmd = self._build_command(
+            model=model,
+            max_tokens=max_tokens,
+            temperature=temperature
+        )
 
         # Execute CLI
         result = await self._run_cli(cmd, prompt)
