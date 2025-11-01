@@ -30,7 +30,8 @@ class ClaudeCodeCLIProvider(BaseLLMProvider):
         CLAUDE_CLI_PATH: Path to claude executable (default: "claude")
         CLAUDE_CLI_PROJECT: Project path for -p option
         CLAUDE_CLI_MODEL: Model name (e.g., "claude-3-5-sonnet-20241022")
-        CLAUDE_CLI_EXTRA_ARGS: Additional CLI arguments (default: "--output-format stream-json --print")
+        CLAUDE_CLI_OUTPUT_FORMAT: Output format - "json" or "stream-json" (default: "json")
+        CLAUDE_CLI_EXTRA_ARGS: Additional CLI arguments (default: "--print")
         CLAUDE_CLI_TIMEOUT: Timeout in seconds (default: 180)
     """
 
@@ -41,6 +42,7 @@ class ClaudeCodeCLIProvider(BaseLLMProvider):
         model: Optional[str] = None,
         extra_args: Optional[str] = None,
         timeout: int = 180,
+        output_format: str = "json",
     ):
         """
         Initialize the Claude Code CLI provider.
@@ -51,21 +53,24 @@ class ClaudeCodeCLIProvider(BaseLLMProvider):
             model: Model name (overrides CLAUDE_CLI_MODEL)
             extra_args: Additional CLI arguments (overrides CLAUDE_CLI_EXTRA_ARGS)
             timeout: Timeout in seconds (overrides CLAUDE_CLI_TIMEOUT)
+            output_format: CLI output format - "json" or "stream-json" (default: "json")
         """
         self.cli_path = cli_path or os.getenv("CLAUDE_CLI_PATH", "claude")
         self.project_path = project_path or os.getenv("CLAUDE_CLI_PROJECT")
         self.model = model or os.getenv("CLAUDE_CLI_MODEL")
         self.extra_args = extra_args or os.getenv(
             "CLAUDE_CLI_EXTRA_ARGS",
-            "--output-format stream-json --print"
+            "--print"
         )
         self.timeout = int(os.getenv("CLAUDE_CLI_TIMEOUT", str(timeout)))
+        self.output_format = os.getenv("CLAUDE_CLI_OUTPUT_FORMAT", output_format)
 
         logger.info(
             f"Initialized ClaudeCodeCLIProvider: "
             f"cli_path={self.cli_path}, "
             f"project_path={self.project_path}, "
             f"model={self.model}, "
+            f"output_format={self.output_format}, "
             f"timeout={self.timeout}s"
         )
 
@@ -137,8 +142,8 @@ class ClaudeCodeCLIProvider(BaseLLMProvider):
                 filtered_args.append(arg)
             cmd += filtered_args
 
-        # Always use json format (default)
-        cmd += ["--output-format", "json"]
+        # Add output format
+        cmd += ["--output-format", self.output_format]
 
         return cmd
 
@@ -390,9 +395,12 @@ class ClaudeCodeCLIProvider(BaseLLMProvider):
         resume_session: Optional[str] = None,
         enable_session_tracking: bool = False,
         **kwargs
-    ):
+    ) -> str:
         """
         Simplified interface that takes a single prompt string.
+
+        This method always returns a string (content only). For metadata
+        like session_id and usage, use generate_with_metadata() instead.
 
         Args:
             prompt: Single prompt string
@@ -401,12 +409,61 @@ class ClaudeCodeCLIProvider(BaseLLMProvider):
             temperature: Sampling temperature (0.0 - 1.0)
             max_turns: Maximum agent turns for tool calling
             resume_session: Session ID to resume conversation
-            enable_session_tracking: Enable session tracking (returns dict with session_id)
+            enable_session_tracking: Enable session tracking (deprecated, use generate_with_metadata)
             **kwargs: Additional parameters (ignored)
 
         Returns:
-            str if enable_session_tracking is False
-            Dict[str, Any] if enable_session_tracking is True (includes session_id)
+            str: The generated response text
+
+        Raises:
+            Exception: If generation fails
+        """
+        # Use generate_with_metadata and extract content
+        result = await self.generate_with_metadata(
+            prompt=prompt,
+            model=model,
+            max_tokens=max_tokens,
+            temperature=temperature,
+            max_turns=max_turns,
+            resume_session=resume_session,
+            enable_session_tracking=enable_session_tracking,
+            **kwargs
+        )
+
+        return result.get("content", "")
+
+    async def generate_with_metadata(
+        self,
+        prompt: str,
+        model: Optional[str] = None,
+        max_tokens: Optional[int] = None,
+        temperature: Optional[float] = None,
+        max_turns: Optional[int] = None,
+        resume_session: Optional[str] = None,
+        enable_session_tracking: bool = False,
+        **kwargs
+    ) -> Dict[str, Any]:
+        """
+        Generate response with full metadata (session_id, usage, cost, etc.).
+
+        Args:
+            prompt: Single prompt string
+            model: Model name override
+            max_tokens: Maximum tokens to generate
+            temperature: Sampling temperature (0.0 - 1.0)
+            max_turns: Maximum agent turns for tool calling
+            resume_session: Session ID to resume conversation
+            enable_session_tracking: Enable session tracking (returns session_id)
+            **kwargs: Additional parameters (ignored)
+
+        Returns:
+            Dict with keys:
+                - content: str - The generated response text
+                - usage: dict - Token usage information
+                - session_id: str (optional) - Session identifier
+                - total_cost_usd: float (optional) - Cost in USD
+                - num_turns: int (optional) - Number of turns
+                - error: str (optional) - Error message if failed
 
         Raises:
             Exception: If generation fails
@@ -421,19 +478,11 @@ class ClaudeCodeCLIProvider(BaseLLMProvider):
             enable_session_tracking=enable_session_tracking
         )
 
-        # Always use json format
-        output_format = "json"
-
         # Execute CLI
-        result = await self._run_cli(cmd, prompt, output_format=output_format)
+        result = await self._run_cli(cmd, prompt, output_format=self.output_format)
 
         # Check for errors
         if "error" in result and result["error"]:
             raise Exception(result["error"])
 
-        # If session tracking is enabled, return full dict (with session_id)
-        # Otherwise return just the content string (backward compatibility)
-        if enable_session_tracking:
-            return result
-        else:
-            return result.get("content", "")
+        return result

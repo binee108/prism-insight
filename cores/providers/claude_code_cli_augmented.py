@@ -213,21 +213,19 @@ USER MESSAGE:
             f"use_history={use_history}"
         )
 
-        # Call the underlying provider
-        result = await self.provider.generate_str(
-            prompt=full_prompt,
-            model=model,
-            max_tokens=max_tokens,
-            temperature=temperature,
-            max_turns=max_turns,
-            resume_session=resume_session,
-            enable_session_tracking=self.use_history
-        )
+        # Phase 4: If using history, get full metadata to extract session_id
+        if self.use_history:
+            # Get full metadata including session_id
+            result = await self.provider.generate_with_metadata(
+                prompt=full_prompt,
+                model=model,
+                max_tokens=max_tokens,
+                temperature=temperature,
+                max_turns=max_turns,
+                resume_session=resume_session,
+                enable_session_tracking=True
+            )
 
-        # Phase 4: If using history, the provider returns a dict with session_id
-        # But generate_str should return str, so we need to handle this differently
-        # We'll modify provider.generate_str to return the dict and extract content here
-        if isinstance(result, dict):
             # Update session if available
             if "session_id" in result:
                 self.current_session_id = result["session_id"]
@@ -238,9 +236,18 @@ USER MESSAGE:
             logger.info(f"Generated response: {len(content)} chars")
             return content
         else:
-            # Backward compatibility if result is already a string
-            logger.info(f"Generated response: {len(result)} chars")
-            return result
+            # No history needed, just get the text
+            content = await self.provider.generate_str(
+                prompt=full_prompt,
+                model=model,
+                max_tokens=max_tokens,
+                temperature=temperature,
+                max_turns=max_turns,
+                resume_session=resume_session,
+                enable_session_tracking=False
+            )
+            logger.info(f"Generated response: {len(content)} chars")
+            return content
 
     async def generate(
         self,
@@ -321,6 +328,7 @@ USER MESSAGE:
         )
 
         # Call the underlying provider
+        # generate() always returns Dict, so no need for special handling
         result = await self.provider.generate(
             messages=messages,
             model=model,
