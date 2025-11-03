@@ -108,9 +108,8 @@ class ClaudeCodeCLIProvider(BaseLLMProvider):
         if effective_model:
             cmd += ["--model", effective_model]
 
-        # Add max_tokens if specified
-        if max_tokens is not None:
-            cmd += ["--max-tokens", str(max_tokens)]
+        # Note: Claude Code CLI does not support --max-tokens option
+        # max_tokens parameter is ignored
 
         # Add temperature if specified
         if temperature is not None:
