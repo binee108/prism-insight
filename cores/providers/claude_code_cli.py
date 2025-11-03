@@ -87,9 +87,9 @@ class ClaudeCodeCLIProvider(BaseLLMProvider):
         Build the CLI command array.
 
         Args:
-            model: Override default model
-            max_tokens: Maximum tokens to generate
-            temperature: Sampling temperature
+            model: Override default model (maps to --model)
+            max_tokens: Maximum tokens to generate (IGNORED - not supported by CLI)
+            temperature: Sampling temperature (IGNORED - not supported by CLI)
             max_turns: Maximum agent turns (maps to --max-turns)
             resume_session: Session ID to resume (maps to --resume)
             enable_session_tracking: Use json output format for session tracking
@@ -108,12 +108,8 @@ class ClaudeCodeCLIProvider(BaseLLMProvider):
         if effective_model:
             cmd += ["--model", effective_model]
 
-        # Note: Claude Code CLI does not support --max-tokens option
-        # max_tokens parameter is ignored
-
-        # Add temperature if specified
-        if temperature is not None:
-            cmd += ["--temperature", str(temperature)]
+        # Note: Claude Code CLI does not support --max-tokens or --temperature options
+        # These parameters are ignored for CLI compatibility
 
         # Add max_turns if specified (for max_iterations support)
         if max_turns is not None and max_turns > 0:
@@ -353,8 +349,8 @@ class ClaudeCodeCLIProvider(BaseLLMProvider):
         Args:
             messages: List of message dicts
             model: Model name override
-            max_tokens: Maximum tokens to generate
-            temperature: Sampling temperature (0.0 - 1.0)
+            max_tokens: Maximum tokens to generate (IGNORED - not supported by CLI)
+            temperature: Sampling temperature (IGNORED - not supported by CLI)
             max_turns: Maximum agent turns for tool calling
             resume_session: Session ID to resume conversation
             enable_session_tracking: Enable session tracking (returns session_id)
@@ -404,8 +400,8 @@ class ClaudeCodeCLIProvider(BaseLLMProvider):
         Args:
             prompt: Single prompt string
             model: Model name override
-            max_tokens: Maximum tokens to generate
-            temperature: Sampling temperature (0.0 - 1.0)
+            max_tokens: Maximum tokens to generate (IGNORED - not supported by CLI)
+            temperature: Sampling temperature (IGNORED - not supported by CLI)
             max_turns: Maximum agent turns for tool calling
             resume_session: Session ID to resume conversation
             enable_session_tracking: Enable session tracking (deprecated, use generate_with_metadata)
@@ -448,8 +444,8 @@ class ClaudeCodeCLIProvider(BaseLLMProvider):
         Args:
             prompt: Single prompt string
             model: Model name override
-            max_tokens: Maximum tokens to generate
-            temperature: Sampling temperature (0.0 - 1.0)
+            max_tokens: Maximum tokens to generate (IGNORED - not supported by CLI)
+            temperature: Sampling temperature (IGNORED - not supported by CLI)
             max_turns: Maximum agent turns for tool calling
             resume_session: Session ID to resume conversation
             enable_session_tracking: Enable session tracking (returns session_id)
