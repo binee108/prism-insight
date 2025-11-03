@@ -6,9 +6,14 @@ import signal
 import sys
 from datetime import datetime
 from pathlib import Path
+from dotenv import load_dotenv
 
 # 프로젝트 루트를 Python 경로에 추가
 project_root = Path(__file__).parent.parent
+
+# .env 파일 로드 (환경변수 설정)
+load_dotenv(project_root / ".env")
+
 sys.path.insert(0, str(project_root))
 
 from cores.analysis import analyze_stock
