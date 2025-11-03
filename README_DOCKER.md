@@ -24,7 +24,8 @@ Ubuntu 24.04 기반 AI 주식 분석 시스템을 Docker로 간편하게 실행�
 - **Python**: 3.12.x (가상환경)
 - **Node.js**: 22.x LTS
 - **UV**: Python 패키지 관리자
-- **wkhtmltopdf**: PDF 변환 도구
+- **Playwright + Chromium**: PDF 변환 도구 (최신 웹 표준 지원)
+- **wkhtmltopdf**: PDF 변환 대체 도구
 - **한글 폰트**: Nanum 폰트 패밀리
 
 #### Python 패키지
@@ -305,6 +306,31 @@ python3 check_market_day.py
 # 도움말 확인
 python3 stock_analysis_orchestrator.py --help
 python3 trigger_batch.py --help
+```
+
+### 5. PDF 변환 테스트
+
+```bash
+# 테스트용 마크다운 파일 생성
+cat > /tmp/test.md << 'EOF'
+# 테스트 문서
+
+이것은 **PDF 변환 테스트**입니다.
+
+## 한글 지원 확인
+- 항목 1
+- 항목 2
+- 항목 3
+EOF
+
+# Playwright로 PDF 생성 (권장)
+python3 pdf_converter.py /tmp/test.md /tmp/test_playwright.pdf playwright
+
+# fallback 테스트 (자동으로 playwright -> pdfkit -> reportlab -> mdpdf 순서 시도)
+python3 pdf_converter.py /tmp/test.md /tmp/test_auto.pdf auto
+
+# 생성 확인
+ls -lh /tmp/test*.pdf
 ```
 
 ---

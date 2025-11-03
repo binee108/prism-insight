@@ -3,9 +3,10 @@
 마크다운 파일을 PDF로 변환하는 모듈
 
 다양한 변환 방식 제공:
-1. pdfkit 기반 HTML 중간 변환 (wkhtmltopdf 필요)
-2. reportlab 직접 렌더링
-3. mdpdf 간편 변환 (추가됨)
+1. playwright 기반 Chromium 렌더링 (권장, 최신 웹 표준 지원)
+2. pdfkit 기반 HTML 중간 변환 (wkhtmltopdf 필요)
+3. reportlab 직접 렌더링
+4. mdpdf 간편 변환
 """
 import os
 import logging
@@ -331,6 +332,75 @@ def markdown_to_html(md_file_path, add_css=True, add_theme=False, logo_path=None
         logger.error(f"HTML 변환 중 오류: {str(e)}")
         raise
 
+def markdown_to_pdf_playwright(md_file_path, pdf_file_path, add_theme=False, logo_path=None, enable_watermark=False, watermark_opacity=0.02):
+    """
+    Playwright(Chromium)를 사용하여 마크다운을 PDF로 변환
+
+    설치 방법:
+        pip install playwright
+        playwright install chromium
+
+    Args:
+        md_file_path (str): 마크다운 파일 경로
+        pdf_file_path (str): 출력 PDF 파일 경로
+        add_theme (bool): 테마 및 로고 추가 여부
+        logo_path (str): 로고 이미지 경로 (None인 경우 기본 로고 사용)
+        enable_watermark (bool): 배경에 로고 워터마크 적용 여부
+        watermark_opacity (float): 워터마크 투명도 (0.0-1.0)
+    """
+    try:
+        # playwright 임포트 (설치 필요: pip install playwright + playwright install chromium)
+        from playwright.sync_api import sync_playwright
+
+        # 마크다운을 HTML로 변환
+        html_content = markdown_to_html(
+            md_file_path,
+            add_theme=add_theme,
+            logo_path=logo_path,
+            enable_watermark=enable_watermark,
+            watermark_opacity=watermark_opacity
+        )
+
+        # HTML을 임시 파일로 저장
+        with tempfile.NamedTemporaryFile(suffix='.html', delete=False, mode='w', encoding='utf-8') as f:
+            f.write(html_content)
+            temp_html = f.name
+
+        # Playwright로 PDF 생성
+        with sync_playwright() as p:
+            browser = p.chromium.launch(headless=True)
+            page = browser.new_page()
+
+            # 로컬 파일 로드 (file:// 프로토콜 사용)
+            page.goto(f'file://{os.path.abspath(temp_html)}')
+
+            # PDF 옵션 설정
+            page.pdf(
+                path=pdf_file_path,
+                format='A4',
+                margin={
+                    'top': '20mm',
+                    'right': '20mm',
+                    'bottom': '20mm',
+                    'left': '20mm'
+                },
+                print_background=True  # 배경 이미지/색상 출력 (워터마크 지원)
+            )
+
+            browser.close()
+
+        # 임시 파일 삭제
+        os.unlink(temp_html)
+
+        logger.info(f"Playwright로 PDF 변환 완료: {pdf_file_path}")
+
+    except ImportError:
+        logger.error("Playwright 라이브러리가 설치되지 않았습니다. pip install playwright && playwright install chromium으로 설치하세요.")
+        raise
+    except Exception as e:
+        logger.error(f"Playwright 변환 중 오류: {str(e)}")
+        raise
+
 def markdown_to_pdf_pdfkit(md_file_path, pdf_file_path, add_theme=False, logo_path=None, enable_watermark=False, watermark_opacity=0.02):
     """
     pdfkit(wkhtmltopdf)를 사용하여 마크다운을 PDF로 변환
@@ -544,14 +614,15 @@ def markdown_to_pdf_mdpdf(md_file_path, pdf_file_path):
         logger.error(f"mdpdf 변환 중 오류: {str(e)}")
         raise
 
-def markdown_to_pdf(md_file_path, pdf_file_path, method='pdfkit', add_theme=False, logo_path=None, enable_watermark=False, watermark_opacity=0.02):
+def markdown_to_pdf(md_file_path, pdf_file_path, method='auto', add_theme=False, logo_path=None, enable_watermark=False, watermark_opacity=0.02):
     """
     마크다운 파일을 PDF로 변환 (기본 메서드 선택)
 
     Args:
         md_file_path (str): 마크다운 파일 경로
         pdf_file_path (str): 출력 PDF 파일 경로
-        method (str): 변환 방식 ('pdfkit', 'reportlab', 'mdpdf')
+        method (str): 변환 방식 ('auto', 'playwright', 'pdfkit', 'reportlab', 'mdpdf')
+                     'auto'는 playwright -> pdfkit -> reportlab -> mdpdf 순으로 fallback
         add_theme (bool): 테마 및 로고 추가 여부
         logo_path (str): 로고 이미지 경로 (None인 경우 기본 로고 사용)
         enable_watermark (bool): 배경에 로고 워터마크 적용 여부
@@ -560,7 +631,9 @@ def markdown_to_pdf(md_file_path, pdf_file_path, method='pdfkit', add_theme=Fals
     logger.info(f"마크다운 PDF 변환 시작: {md_file_path} -> {pdf_file_path}")
 
     try:
-        if method == 'pdfkit':
+        if method == 'playwright':
+            markdown_to_pdf_playwright(md_file_path, pdf_file_path, add_theme, logo_path, enable_watermark, watermark_opacity)
+        elif method == 'pdfkit':
             markdown_to_pdf_pdfkit(md_file_path, pdf_file_path, add_theme, logo_path, enable_watermark, watermark_opacity)
         elif method == 'reportlab':
             # 참고: reportlab 메서드는 현재 테마 지원이 없습니다
@@ -569,16 +642,20 @@ def markdown_to_pdf(md_file_path, pdf_file_path, method='pdfkit', add_theme=Fals
             # 참고: mdpdf 메서드는 현재 테마 지원이 없습니다
             markdown_to_pdf_mdpdf(md_file_path, pdf_file_path)
         else:
-            # 기본값은 pdfkit 시도 후 실패하면 reportlab, 마지막으로 mdpdf
+            # 기본값(auto)은 playwright 시도 -> pdfkit -> reportlab -> mdpdf 순으로 fallback
             try:
-                markdown_to_pdf_pdfkit(md_file_path, pdf_file_path, add_theme, logo_path, enable_watermark, watermark_opacity)
+                markdown_to_pdf_playwright(md_file_path, pdf_file_path, add_theme, logo_path, enable_watermark, watermark_opacity)
             except Exception as e1:
-                logger.warning(f"pdfkit 실패, ReportLab 시도: {str(e1)}")
+                logger.warning(f"Playwright 실패, pdfkit 시도: {str(e1)}")
                 try:
-                    markdown_to_pdf_reportlab(md_file_path, pdf_file_path)
+                    markdown_to_pdf_pdfkit(md_file_path, pdf_file_path, add_theme, logo_path, enable_watermark, watermark_opacity)
                 except Exception as e2:
-                    logger.warning(f"ReportLab 실패, mdpdf 시도: {str(e2)}")
-                    markdown_to_pdf_mdpdf(md_file_path, pdf_file_path)
+                    logger.warning(f"pdfkit 실패, ReportLab 시도: {str(e2)}")
+                    try:
+                        markdown_to_pdf_reportlab(md_file_path, pdf_file_path)
+                    except Exception as e3:
+                        logger.warning(f"ReportLab 실패, mdpdf 시도: {str(e3)}")
+                        markdown_to_pdf_mdpdf(md_file_path, pdf_file_path)
 
     except Exception as e:
         logger.error(f"PDF 변환 실패: {str(e)}")

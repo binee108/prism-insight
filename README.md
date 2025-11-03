@@ -248,8 +248,11 @@ PRISM-INSIGHT는 **12개의 전문화된 AI 에이전트들이 협업하는 다�
 - OpenAI API 키 (GPT-4.1, GPT-5)
 - Anthropic API 키 (Claude-Sonnet-4.5)
 - 텔레그램 봇 토큰 및 채널 ID
-- wkhtmltopdf (PDF 변환용)
+- Playwright (PDF 변환용, 권장)
 - 한국투자증권 API 관련 앱키 및 시크릿키
+
+**선택사항:**
+- wkhtmltopdf (PDF 변환용 대체 도구)
 
 ### 설치
 
@@ -264,7 +267,14 @@ cd prism-insight
 pip install -r requirements.txt
 ```
 
-3. **설정 파일 준비**
+3. **Playwright 설치 및 브라우저 다운로드** (PDF 변환용)
+```bash
+playwright install chromium
+```
+
+**참고**: Playwright가 설치되지 않은 경우 자동으로 pdfkit → reportlab → mdpdf 순으로 fallback됩니다.
+
+4. **설정 파일 준비**
 다음 예시 파일들을 복사하여 실제 설정 파일을 생성하세요:
 ```bash
 cp .env.example .env
@@ -273,10 +283,10 @@ cp mcp_agent.config.yaml.example mcp_agent.config.yaml
 cp mcp_agent.secrets.yaml.example mcp_agent.secrets.yaml
 ```
 
-4. **설정 파일 편집**
+5. **설정 파일 편집**
 복사한 설정 파일들을 편집하여 필요한 API 키와 설정값들을 입력하세요.
 
-5. **wkhtmltopdf 설치** (PDF 변환용)
+6. **(선택사항) wkhtmltopdf 설치** (PDF 변환용 대체 도구)
 ```bash
 # macOS
 brew install wkhtmltopdf
@@ -288,13 +298,15 @@ sudo apt-get install wkhtmltopdf
 sudo yum install wkhtmltopdf
 ```
 
-6. **perplexity-ask MCP 서버 설치**
+**참고**: Playwright 설치를 권장하며, wkhtmltopdf는 선택사항입니다.
+
+7. **perplexity-ask MCP 서버 설치**
 ```bash
 cd perplexity-ask
 npm install
 ```
 
-7. **한글 폰트 설치** (Linux 환경)
+8. **한글 폰트 설치** (Linux 환경)
 
 Linux에서 차트 한글 표시를 위해 한글 폰트가 필요합니다.
 
@@ -312,7 +324,7 @@ python3 -c "import matplotlib.font_manager as fm; fm.fontManager.rebuild()"
 참고: macOS와 Windows는 기본 한글 폰트가 지원되어 별도 설치 불필요
 ```
 
-8. **자동 실행 설정 (Crontab)**
+9. **자동 실행 설정 (Crontab)**
 
 시스템에서 자동으로 실행되도록 crontab을 설정합니다:
 
@@ -369,7 +381,20 @@ python cores/main.py
 
 **3. PDF 변환**
 ```bash
+# 기본 사용 (자동 fallback: playwright -> pdfkit -> reportlab -> mdpdf)
 python pdf_converter.py input.md output.pdf
+
+# 특정 방식 지정
+python pdf_converter.py input.md output.pdf playwright  # Playwright 사용
+python pdf_converter.py input.md output.pdf pdfkit     # wkhtmltopdf 사용
+python pdf_converter.py input.md output.pdf reportlab  # ReportLab 사용
+python pdf_converter.py input.md output.pdf mdpdf      # mdpdf 사용
+
+# 테마 적용
+python pdf_converter.py input.md output.pdf auto true
+
+# 워터마크 적용
+python pdf_converter.py input.md output.pdf auto true true 0.02
 ```
 
 **4. 텔레그램 메시지 생성 및 전송**
