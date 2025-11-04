@@ -40,20 +40,21 @@ logger = logging.getLogger(__name__)
 
 
 # Model name mapping: OpenAI/generic names -> Claude model names
+# Note: "sonnet", "opus", "haiku" automatically use latest versions
 MODEL_MAPPING = {
-    # OpenAI models -> Claude equivalents
-    "gpt-4": "claude-sonnet-4",
-    "gpt-4.1": "claude-sonnet-4",
-    "gpt-4-turbo": "claude-sonnet-4",
-    "gpt-4o": "claude-sonnet-4",
-    "gpt-3.5-turbo": "claude-haiku-4",
+    # OpenAI models -> Claude equivalents (use generic names for latest)
+    "gpt-4": "sonnet",
+    "gpt-4.1": "sonnet",
+    "gpt-4-turbo": "sonnet",
+    "gpt-4o": "sonnet",
+    "gpt-3.5-turbo": "haiku",
 
-    # Generic names -> Claude models
-    "sonnet": "claude-sonnet-4",
-    "opus": "claude-opus-4",
-    "haiku": "claude-haiku-4",
+    # Generic names (CLI handles these natively, use latest)
+    "sonnet": "sonnet",
+    "opus": "opus",
+    "haiku": "haiku",
 
-    # Already Claude models (pass through)
+    # Specific Claude models (pass through unchanged)
     "claude-sonnet-4": "claude-sonnet-4",
     "claude-opus-4": "claude-opus-4",
     "claude-haiku-4": "claude-haiku-4",
@@ -73,9 +74,9 @@ def map_model_name(model: Optional[str]) -> Optional[str]:
         Mapped Claude model name, or None if no mapping needed
 
     Examples:
-        map_model_name("gpt-4.1") -> "claude-sonnet-4"
-        map_model_name("sonnet") -> "claude-sonnet-4"
-        map_model_name("claude-sonnet-4") -> "claude-sonnet-4"
+        map_model_name("gpt-4.1") -> "sonnet" (latest Sonnet)
+        map_model_name("sonnet") -> "sonnet" (latest Sonnet)
+        map_model_name("claude-sonnet-4") -> "claude-sonnet-4" (specific version)
         map_model_name(None) -> None
     """
     if not model:
@@ -100,11 +101,11 @@ def map_model_name(model: Optional[str]) -> Optional[str]:
         logger.debug(f"Model name already Claude format: {model}")
         return model
 
-    # If it starts with "gpt-", map to default Claude model
+    # If it starts with "gpt-", map to default Claude model (latest Sonnet)
     if model.startswith("gpt-"):
-        default = "claude-sonnet-4"
+        default = "sonnet"
         logger.warning(
-            f"Unknown OpenAI model '{model}', using default Claude model: {default}"
+            f"Unknown OpenAI model '{model}', using default Claude model: {default} (latest)"
         )
         return default
 
