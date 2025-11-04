@@ -1,0 +1,64 @@
+# Agent Configuration
+#
+# This file defines LLM provider and model settings for each agent.
+# Agents can have individual configurations, or use the default settings.
+
+# Default configuration for all agents (unless overridden)
+default:
+  provider: claude-code-cli  # Options: openai, anthropic, claude-code-cli
+  model: sonnet              # Model name specific to the provider
+
+# Per-agent configuration overrides
+agents:
+  # Stock price analysis agents
+  price_volume_analysis_agent:
+    provider: claude-code-cli
+    model: sonnet
+
+  investor_trading_analysis_agent:
+    provider: claude-code-cli
+    model: sonnet
+
+  # Company information agents
+  company_status_agent:
+    provider: claude-code-cli
+    model: sonnet
+
+  company_overview_agent:
+    provider: claude-code-cli
+    model: sonnet
+
+  # News and strategy agents
+  news_analysis_agent:
+    provider: claude-code-cli
+    model: sonnet
+
+  # Market analysis agents
+  market_index_analysis_agent:
+    provider: claude-code-cli
+    model: sonnet
+
+  # Summary and strategy agents
+  summary_agent:
+    provider: claude-code-cli
+    model: sonnet
+
+  investment_strategy_agent:
+    provider: claude-code-cli
+    model: sonnet
+
+# Model name reference:
+#
+# Claude Code CLI:
+#   - sonnet, opus, haiku (generic names, use latest versions)
+#   - claude-sonnet-4, claude-opus-4, claude-haiku-4 (specific versions)
+#   - claude-3-5-sonnet-20241022 (date-specific versions)
+#
+# OpenAI:
+#   - gpt-4, gpt-4-turbo, gpt-4o
+#   - gpt-3.5-turbo
+#
+# Anthropic:
+#   - claude-3-5-sonnet-20241022
+#   - claude-3-opus-20240229
+#   - claude-3-haiku-20240307

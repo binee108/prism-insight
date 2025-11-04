@@ -2,30 +2,38 @@
 LLM Provider Factory for prism-insight.
 
 This module provides helper functions to select and instantiate LLM providers
-based on environment variables, making it easy to switch between different
-providers without code changes.
+based on agent.config.yaml and environment variables, making it easy to switch
+between different providers without code changes.
 """
 
 import os
 import logging
 from typing import Type, Optional, Any
 
+from cores.agent_config import get_agent_config
+
 logger = logging.getLogger(__name__)
 
 
-def get_llm_provider_class(provider_name: Optional[str] = None) -> Type[Any]:
+def get_llm_provider_class(
+    provider_name: Optional[str] = None,
+    agent_name: Optional[str] = None
+) -> Type[Any]:
     """
-    Get the LLM provider class based on name or environment variable.
+    Get the LLM provider class based on agent config, name, or environment variable.
 
     This function returns the appropriate AugmentedLLM class for use
     with mcp-agent's attach_llm() method.
 
-    Environment Variables:
-        PRISM_LLM_PROVIDER: Provider name ('openai', 'anthropic', 'claude-code-cli')
-                           Default: 'openai'
+    Priority order:
+        1. provider_name argument (explicit override)
+        2. agent.config.yaml (agent-specific or default)
+        3. PRISM_LLM_PROVIDER environment variable
+        4. Default: 'openai'
 
     Args:
-        provider_name: Override provider name (overrides env var)
+        provider_name: Override provider name (highest priority)
+        agent_name: Agent name to lookup in agent.config.yaml
 
     Returns:
         LLM provider class (e.g., OpenAIAugmentedLLM, ClaudeCodeCLIAugmentedLLM)
@@ -35,19 +43,35 @@ def get_llm_provider_class(provider_name: Optional[str] = None) -> Type[Any]:
         ImportError: If provider module is not available
 
     Example:
-        # Using default provider (from env var)
-        provider_class = get_llm_provider_class()
-        llm = await agent.attach_llm(provider_class)
+        # Using agent config
+        provider_class = get_llm_provider_class(agent_name="price_volume_analysis_agent")
 
-        # Using specific provider
+        # Override with specific provider
         provider_class = get_llm_provider_class("claude-code-cli")
-        llm = await agent.attach_llm(provider_class)
-    """
-    # Get provider name from argument or environment
-    provider = provider_name or os.getenv("PRISM_LLM_PROVIDER", "openai")
-    provider = provider.lower().strip()
 
-    logger.info(f"Selecting LLM provider: {provider}")
+        # Default (env var)
+        provider_class = get_llm_provider_class()
+    """
+    # Priority 1: Explicit provider_name argument
+    if provider_name:
+        provider = provider_name
+        logger.info(f"Using explicit provider: {provider}")
+    # Priority 2: Agent config
+    elif agent_name:
+        agent_cfg = get_agent_config(agent_name)
+        provider = agent_cfg.get("provider")
+        if provider:
+            logger.info(f"Using provider from agent.config.yaml for '{agent_name}': {provider}")
+        else:
+            # Fall back to env var
+            provider = os.getenv("PRISM_LLM_PROVIDER", "openai")
+            logger.info(f"Agent '{agent_name}' has no provider config, using env var: {provider}")
+    # Priority 3: Environment variable
+    else:
+        provider = os.getenv("PRISM_LLM_PROVIDER", "openai")
+        logger.info(f"Using provider from PRISM_LLM_PROVIDER env var: {provider}")
+
+    provider = provider.lower().strip()
 
     if provider == "openai":
         try:
