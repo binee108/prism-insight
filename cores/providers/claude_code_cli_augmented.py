@@ -39,6 +39,80 @@ except ImportError:
 logger = logging.getLogger(__name__)
 
 
+# Model name mapping: OpenAI/generic names -> Claude model names
+MODEL_MAPPING = {
+    # OpenAI models -> Claude equivalents
+    "gpt-4": "claude-sonnet-4",
+    "gpt-4.1": "claude-sonnet-4",
+    "gpt-4-turbo": "claude-sonnet-4",
+    "gpt-4o": "claude-sonnet-4",
+    "gpt-3.5-turbo": "claude-haiku-4",
+
+    # Generic names -> Claude models
+    "sonnet": "claude-sonnet-4",
+    "opus": "claude-opus-4",
+    "haiku": "claude-haiku-4",
+
+    # Already Claude models (pass through)
+    "claude-sonnet-4": "claude-sonnet-4",
+    "claude-opus-4": "claude-opus-4",
+    "claude-haiku-4": "claude-haiku-4",
+    "claude-3-5-sonnet-20241022": "claude-3-5-sonnet-20241022",
+    "claude-3-opus-20240229": "claude-3-opus-20240229",
+}
+
+
+def map_model_name(model: Optional[str]) -> Optional[str]:
+    """
+    Map OpenAI or generic model names to Claude model names.
+
+    Args:
+        model: Input model name (may be OpenAI, generic, or Claude)
+
+    Returns:
+        Mapped Claude model name, or None if no mapping needed
+
+    Examples:
+        map_model_name("gpt-4.1") -> "claude-sonnet-4"
+        map_model_name("sonnet") -> "claude-sonnet-4"
+        map_model_name("claude-sonnet-4") -> "claude-sonnet-4"
+        map_model_name(None) -> None
+    """
+    if not model:
+        return None
+
+    # Try exact match first
+    if model in MODEL_MAPPING:
+        mapped = MODEL_MAPPING[model]
+        if mapped != model:
+            logger.info(f"Model name mapped: {model} -> {mapped}")
+        return mapped
+
+    # Try case-insensitive match
+    model_lower = model.lower()
+    for key, value in MODEL_MAPPING.items():
+        if key.lower() == model_lower:
+            logger.info(f"Model name mapped (case-insensitive): {model} -> {value}")
+            return value
+
+    # If it starts with "claude-", assume it's valid
+    if model.startswith("claude-"):
+        logger.debug(f"Model name already Claude format: {model}")
+        return model
+
+    # If it starts with "gpt-", map to default Claude model
+    if model.startswith("gpt-"):
+        default = "claude-sonnet-4"
+        logger.warning(
+            f"Unknown OpenAI model '{model}', using default Claude model: {default}"
+        )
+        return default
+
+    # Unknown model, log warning and return as-is (CLI will error if invalid)
+    logger.warning(f"Unknown model name: {model}, passing through to CLI")
+    return model
+
+
 class ClaudeCodeCLIAugmentedLLM:
     """
     MCP-Agent compatible wrapper for Claude Code CLI.
@@ -166,6 +240,9 @@ class ClaudeCodeCLIAugmentedLLM:
 
         if request_params:
             model = getattr(request_params, "model", None)
+            # Map OpenAI/generic model names to Claude models
+            model = map_model_name(model)
+
             max_tokens = getattr(request_params, "maxTokens", None)
             temperature = getattr(request_params, "temperature", None)
 
@@ -277,6 +354,9 @@ USER MESSAGE:
 
         if request_params:
             model = getattr(request_params, "model", None)
+            # Map OpenAI/generic model names to Claude models
+            model = map_model_name(model)
+
             max_tokens = getattr(request_params, "maxTokens", None)
             temperature = getattr(request_params, "temperature", None)
 

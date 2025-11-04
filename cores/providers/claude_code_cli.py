@@ -296,11 +296,19 @@ class ClaudeCodeCLIProvider(BaseLLMProvider):
         logger.info("=" * 80)
         logger.info("CLAUDE CLI EXECUTION DEBUG")
         logger.info("=" * 80)
-        logger.info(f"Full command: {' '.join(full_cmd)}")
-        logger.info(f"Command as list: {full_cmd}")
-        logger.info(f"Prompt length: {len(prompt)} chars")
+
+        # Log command parts separately for clarity
+        logger.info(f"CLI executable: {full_cmd[0]}")
+        logger.info(f"Command options: {full_cmd[1:-2]}")  # All except exe and last 2 (-p, prompt)
+        logger.info(f"-p flag index: {len(full_cmd) - 2}")
+        logger.info(f"Prompt (as separate arg): <{len(prompt)} chars>")
         logger.info(f"Prompt preview: {prompt[:200]}..." if len(prompt) > 200 else f"Prompt: {prompt}")
         logger.info(f"Output format: {output_format}")
+
+        # Show full command for reference (NOTE: spaces in prompt are preserved by subprocess)
+        logger.info(f"\nFull command (space-joined for display only):")
+        logger.info(f"  {' '.join(full_cmd[:len(full_cmd)-1])} '<prompt>'")
+        logger.info(f"\nNOTE: Prompt is passed as a single argument via subprocess, spaces are safe")
         logger.info("=" * 80)
 
         try:
