@@ -292,8 +292,16 @@ class ClaudeCodeCLIProvider(BaseLLMProvider):
         # Add prompt as -p option
         full_cmd = cmd + ["-p", prompt]
 
-        logger.info(f"Running CLI command: {' '.join(full_cmd)}")
-        logger.debug(f"Prompt length: {len(prompt)} chars, output_format: {output_format}")
+        # Enhanced logging for debugging
+        logger.info("=" * 80)
+        logger.info("CLAUDE CLI EXECUTION DEBUG")
+        logger.info("=" * 80)
+        logger.info(f"Full command: {' '.join(full_cmd)}")
+        logger.info(f"Command as list: {full_cmd}")
+        logger.info(f"Prompt length: {len(prompt)} chars")
+        logger.info(f"Prompt preview: {prompt[:200]}..." if len(prompt) > 200 else f"Prompt: {prompt}")
+        logger.info(f"Output format: {output_format}")
+        logger.info("=" * 80)
 
         try:
             # Run subprocess with asyncio (no stdin needed)
@@ -325,7 +333,20 @@ class ClaudeCodeCLIProvider(BaseLLMProvider):
             # Check return code
             if proc.returncode != 0:
                 stderr_text = stderr.decode("utf-8", errors="ignore")
-                logger.error(f"CLI execution failed (exit code {proc.returncode}): {stderr_text}")
+                stdout_text = stdout.decode("utf-8", errors="ignore")
+
+                # Enhanced error logging
+                logger.error("=" * 80)
+                logger.error("CLAUDE CLI EXECUTION FAILED")
+                logger.error("=" * 80)
+                logger.error(f"Exit code: {proc.returncode}")
+                logger.error(f"Command: {' '.join(full_cmd)}")
+                logger.error(f"STDOUT length: {len(stdout_text)} chars")
+                logger.error(f"STDOUT:\n{stdout_text if stdout_text else '(empty)'}")
+                logger.error(f"STDERR length: {len(stderr_text)} chars")
+                logger.error(f"STDERR:\n{stderr_text if stderr_text else '(empty)'}")
+                logger.error("=" * 80)
+
                 return {
                     "content": "",
                     "error": f"[claude-code-cli] Exit code {proc.returncode}: {stderr_text}"
@@ -333,19 +354,38 @@ class ClaudeCodeCLIProvider(BaseLLMProvider):
 
             # Parse output
             raw_output = stdout.decode("utf-8", errors="ignore")
+
+            # Log successful output
+            logger.info("=" * 80)
+            logger.info("CLAUDE CLI EXECUTION SUCCESSFUL")
+            logger.info("=" * 80)
+            logger.info(f"STDOUT length: {len(raw_output)} chars")
+            logger.info(f"STDOUT preview: {raw_output[:500]}..." if len(raw_output) > 500 else f"STDOUT: {raw_output}")
+            logger.info("=" * 80)
+
             result = self._parse_output(raw_output, output_format=output_format)
 
-            logger.info(f"CLI execution successful: {len(result.get('content', ''))} chars")
+            logger.info(f"Parsed content length: {len(result.get('content', ''))} chars")
             return result
 
-        except FileNotFoundError:
-            logger.error(f"CLI executable not found: {self.cli_path}")
+        except FileNotFoundError as e:
+            logger.error("=" * 80)
+            logger.error("CLAUDE CLI NOT FOUND")
+            logger.error("=" * 80)
+            logger.error(f"CLI path: {self.cli_path}")
+            logger.error(f"Error: {e}")
+            logger.error("=" * 80)
             return {
                 "content": "",
                 "error": f"[claude-code-cli] Executable not found: {self.cli_path}"
             }
         except Exception as e:
-            logger.error(f"CLI execution error: {e}", exc_info=True)
+            logger.error("=" * 80)
+            logger.error("CLAUDE CLI UNEXPECTED ERROR")
+            logger.error("=" * 80)
+            logger.error(f"Error type: {type(e).__name__}")
+            logger.error(f"Error message: {str(e)}", exc_info=True)
+            logger.error("=" * 80)
             return {
                 "content": "",
                 "error": f"[claude-code-cli] Execution error: {str(e)}"
