@@ -28,11 +28,15 @@ class ClaudeCodeCLIProvider(BaseLLMProvider):
 
     Environment Variables:
         CLAUDE_CLI_PATH: Path to claude executable (default: "claude")
-        CLAUDE_CLI_PROJECT: Project path for -p option
         CLAUDE_CLI_MODEL: Model name (e.g., "claude-3-5-sonnet-20241022")
         CLAUDE_CLI_OUTPUT_FORMAT: Output format - "json" or "stream-json" (default: "json")
-        CLAUDE_CLI_EXTRA_ARGS: Additional CLI arguments (default: "--print")
+        CLAUDE_CLI_EXTRA_ARGS: Additional CLI arguments (default: "")
         CLAUDE_CLI_TIMEOUT: Timeout in seconds (default: 180)
+
+    Note:
+        - -p option is automatically added with the prompt text
+        - Do NOT include --print in CLAUDE_CLI_EXTRA_ARGS (redundant with -p)
+        - CLAUDE_CLI_PROJECT environment variable is deprecated and ignored
     """
 
     def __init__(
@@ -49,18 +53,27 @@ class ClaudeCodeCLIProvider(BaseLLMProvider):
 
         Args:
             cli_path: Path to claude executable (overrides CLAUDE_CLI_PATH)
-            project_path: Project path for -p option (overrides CLAUDE_CLI_PROJECT)
+            project_path: DEPRECATED - -p is used for prompt, not project path
             model: Model name (overrides CLAUDE_CLI_MODEL)
             extra_args: Additional CLI arguments (overrides CLAUDE_CLI_EXTRA_ARGS)
             timeout: Timeout in seconds (overrides CLAUDE_CLI_TIMEOUT)
             output_format: CLI output format - "json" or "stream-json" (default: "json")
         """
         self.cli_path = cli_path or os.getenv("CLAUDE_CLI_PATH", "claude")
-        self.project_path = project_path or os.getenv("CLAUDE_CLI_PROJECT")
+
+        # project_path is deprecated - -p is used for prompt
+        if project_path or os.getenv("CLAUDE_CLI_PROJECT"):
+            logger.warning(
+                "project_path is deprecated. -p option is used for prompt text, not project path. "
+                "This parameter will be ignored."
+            )
+        self.project_path = None  # Always None - deprecated
+
         self.model = model or os.getenv("CLAUDE_CLI_MODEL")
+        # Do not include --print in extra_args as -p flag is used for prompts
         self.extra_args = extra_args or os.getenv(
             "CLAUDE_CLI_EXTRA_ARGS",
-            "--print"
+            ""
         )
         self.timeout = int(os.getenv("CLAUDE_CLI_TIMEOUT", str(timeout)))
         self.output_format = os.getenv("CLAUDE_CLI_OUTPUT_FORMAT", output_format)
@@ -115,13 +128,13 @@ class ClaudeCodeCLIProvider(BaseLLMProvider):
         if max_turns is not None and max_turns > 0:
             cmd += ["--max-turns", str(max_turns)]
 
-        # Add project path if specified (this is the -p option)
-        if self.project_path:
-            cmd += ["-p", self.project_path]
+        # Note: -p is used for prompt text, not project path
+        # Project path functionality is removed as -p is needed for prompt
+        # If project context is needed, it should be included in the prompt text
 
         # Handle extra arguments and output format
-        if self.extra_args:
-            # Filter out --output-format from extra_args to avoid conflicts
+        if self.extra_args and self.extra_args.strip():
+            # Filter out --output-format and --print/--p from extra_args
             args = shlex.split(self.extra_args)
             filtered_args = []
             skip_next = False
@@ -129,10 +142,14 @@ class ClaudeCodeCLIProvider(BaseLLMProvider):
                 if skip_next:
                     skip_next = False
                     continue
+                # Skip --output-format to avoid conflicts
                 if arg == "--output-format":
-                    skip_next = True  # Skip the next argument too
+                    skip_next = True
                     continue
                 if arg.startswith("--output-format="):
+                    continue
+                # Skip --print/-p as they're automatically added
+                if arg in ("--print", "-p"):
                     continue
                 filtered_args.append(arg)
             cmd += filtered_args
@@ -265,29 +282,31 @@ class ClaudeCodeCLIProvider(BaseLLMProvider):
         Execute the CLI command asynchronously.
 
         Args:
-            cmd: Command array
-            prompt: Prompt to send via stdin
+            cmd: Command array (without prompt, will be added here)
+            prompt: Prompt text to add as -p option
             output_format: Format of CLI output ("json" or "stream-json")
 
         Returns:
             Dict with 'content', 'usage', and optional 'error' keys
         """
-        logger.info(f"Running CLI command: {' '.join(cmd)}")
+        # Add prompt as -p option
+        full_cmd = cmd + ["-p", prompt]
+
+        logger.info(f"Running CLI command: {' '.join(full_cmd)}")
         logger.debug(f"Prompt length: {len(prompt)} chars, output_format: {output_format}")
 
         try:
-            # Run subprocess with asyncio
+            # Run subprocess with asyncio (no stdin needed)
             proc = await asyncio.create_subprocess_exec(
-                *cmd,
-                stdin=asyncio.subprocess.PIPE,
+                *full_cmd,
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.PIPE,
             )
 
-            # Send prompt and wait for completion with timeout
+            # Wait for completion with timeout
             try:
                 stdout, stderr = await asyncio.wait_for(
-                    proc.communicate(input=prompt.encode("utf-8")),
+                    proc.communicate(),
                     timeout=self.timeout
                 )
             except asyncio.TimeoutError:
